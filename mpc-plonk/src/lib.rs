@@ -10,13 +10,9 @@
 
 pub mod data_structures;
 pub use data_structures::*;
-use std::convert::TryFrom;
-use std::{time::{Duration, Instant}};
 use ark_ff::BigInteger;
 use ark_ff::BigInteger256;
 pub mod relations;
-use ark_ff::FpParameters;
-use ark_ff::FftParameters;
 pub use relations::*;
 pub mod reveal;
 mod util;
@@ -24,11 +20,9 @@ use zki_sieve::structs::{relation::Relation, instance::Instance, witness::Witnes
 use log::debug;
 use num_bigint::BigUint;
 use blake2::Blake2s;
-use ark_ff::One;
 use ark_ff::PrimeField;
-use std::{path::{Path,PathBuf},char};
+use std::{path::{PathBuf},char};
 use ark_ff::{FftField, Field};
-use ark_std::char::from_digit;
 use crate::structured::PlonkCircuit;
 use ark_poly_commit::{LabeledCommitment, LabeledPolynomial, PCRandomness, PolynomialCommitment};
 use zki_sieve::cli::*;
@@ -38,7 +32,6 @@ use ark_poly::{
     Polynomial, UVPolynomial,
 };
 
-use ark_bls12_377::Fr;
 use ark_std::{end_timer, rand::RngCore, start_timer};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -841,23 +834,27 @@ where
     }
 }
 
+use std::time::Instant;
+use ark_ff::FpParameters;
+use ark_ff::FftParameters;
+use ark_ff::One;
+use ark_std::char::from_digit;
+use ark_bls12_377::Fr;
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use vlpa19::vlpa19_marlin::Vlpa19_Marlin;
-    type E = ark_bls12_377::Bls12_377;
+    // type E = ark_bls12_377::Bls12_377;
     type F = ark_bls12_377::Fr;
-    type P = DensePolynomial<F>;
+    // type P = DensePolynomial<F>;
     type PC = Vlpa19_Marlin<F>;
     type Pl = Plonk<F, PC>;
 
     #[test]
     fn plonk_test() {
-        use relations::{flat::*, structured::*};
-        use std::collections::HashMap;
 
 	let correct_witness   = "../rand_100/arand_witness.sieve";
-	let incorrect_witness = "./sum_check1/asum_check1_witness.sieve";
 	let (circ,public,n_gates) = sieve_to_plonk::<Fr>("../rand_100/rand_instance.sieve",correct_witness,"../rand_100/rand_relation_flat.sieve");
 	println!("num gates {:?}", n_gates);
         let setup_rng = &mut ark_std::test_rng();

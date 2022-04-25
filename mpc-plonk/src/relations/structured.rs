@@ -1,7 +1,6 @@
 use ark_ff::Field;
 use std::collections::HashMap;
 
-use ark_std::char::from_digit;
 #[derive(Debug)]    
 pub struct PlonkCircuit<F: Field> {
     pub n_vars: u32,
@@ -85,7 +84,9 @@ impl<F: Field> PlonkCircuit<F> {
     }
     pub fn new_squaring_circuit(steps: usize, start: Option<F>) -> Self {
         let mut self_ = PlonkCircuit::new(start.is_some());
-	// println!("start {:?}", start.unwrap());
+        if start.is_some() {
+	    println!("start {:?}", start.unwrap());
+        }
         let mut v = self_.new_var(|| start.unwrap());
         for _ in 0..steps {
             v = self_.new_prod(v, v);
