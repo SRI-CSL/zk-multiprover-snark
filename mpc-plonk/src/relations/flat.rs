@@ -80,10 +80,10 @@ impl<F: FftField> CircuitLayout<F> {
         }
             #[cfg(debug_assertions)]
             {
-                println!("Plonk W evals:");
+//                println!("Plonk W evals:");
                 let mut p = wire_evals.clone();
                 for (i, e) in p.evals.iter_mut().enumerate() {
-                    println!("{}: {}", i, e);
+//                    println!("{}: {}", i, e);
                 }
             }
 
@@ -100,11 +100,11 @@ impl<F: FftField> CircuitLayout<F> {
             }
             #[cfg(debug_assertions)]
             {
-                println!("Plonk P evals:");
+//                println!("Plonk P evals:");
                 let mut p = p_evals.clone();
                 for (i, e) in p.evals.iter_mut().enumerate() {
                     e.publicize();
-                    println!("{}: {}", i, e);
+//                    println!("{}: {}", i, e);
                 }
             }
             p_evals.interpolate()
@@ -112,10 +112,10 @@ impl<F: FftField> CircuitLayout<F> {
         let w = wire_evals.interpolate();
             #[cfg(debug_assertions)]
             {
-                println!("Plonk w coeffs:");
+//                println!("Plonk w coeffs:");
                 let mut p = w.clone();
                 for (i, e) in p.coeffs.iter_mut().enumerate() {
-                    println!("{}: {}", i, e);
+//                    println!("{}: {}", i, e);
                 }
             }
         CircuitLayout {
@@ -208,7 +208,7 @@ impl<F: FftField> CircuitLayout<F> {
         }
     }
 
-    fn check_gates(&self) {
+    pub fn check_gates(&self) {
         let wire_g = self.domains.wires.group_gen;
         if let Some(p) = &self.p {
             let p_x_evals = self.evaluate_over_gates(p);
@@ -222,7 +222,7 @@ impl<F: FftField> CircuitLayout<F> {
         }
     }
 
-    fn check_wiring(&self) {
+    pub fn check_wiring(&self) {
         let n_wires = self.domains.wires.size();
         let wire_g = self.domains.wires.group_gen;
         let wire_g_pows: Vec<F> = iter::successors(Some(F::one()), |f| Some(wire_g * f))
@@ -290,10 +290,13 @@ impl<F: FftField> Domains<F> {
             F::FftParams::SMALL_SUBGROUP_BASE,
             Some(3),
             "We require the scalar field's multiplicative group to have a subgroup of order 3"
-        );
+        ); 
         let n = c.n_gates();
+
         let gates = Radix2EvaluationDomain::new(n).expect("gate domain");
         let wires = MixedRadixEvaluationDomain::new(3 * n).expect("wire domain");
+
+
         assert!(3 * gates.size() == wires.size());
         let wire_g = wires.group_gen;
         assert_eq!(wire_g * wire_g * wire_g, gates.group_gen);
@@ -333,8 +336,7 @@ mod tests {
     fn circuit_polys() {
         for steps in &[1, 3] {
             let c = PlonkCircuit::<F>::new_squaring_circuit(*steps, None);
-            let d = Domains::from_circuit(&c);
-            let polys = CircuitLayout::from_circuit(&c, &d);
+            let polys = CircuitLayout::from_circuit(&c);
             polys.check_connection_degree(3);
         }
     }
@@ -345,8 +347,7 @@ mod tests {
             let c = PlonkCircuit::<F>::new_squaring_circuit(*steps, Some(start));
             let res = (0..*steps).fold(start, |a, _| a * a);
             let public: HashMap<String, F> = vec![("out".to_owned(), res)].into_iter().collect();
-            let d = Domains::from_circuit(&c);
-            let polys = CircuitLayout::from_circuit(&c, &d);
+            let polys = CircuitLayout::from_circuit(&c);
             polys.check_connection_degree(3);
             polys.check(&public);
         }

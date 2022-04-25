@@ -6,7 +6,8 @@ use ark_std::marker::PhantomData;
 use ark_std::rand::{RngCore, SeedableRng};
 use digest::{generic_array::GenericArray, Digest};
 use rand_chacha::ChaChaRng;
-
+use rand_chacha::rand_core::RngCore as RgC;
+use rand_chacha::rand_core::SeedableRng as Sr;
 /// Computes f(a*X) from a and f(X)
 pub fn shift<F: FftField>(mut f: DensePolynomial<F>, a: F) -> DensePolynomial<F> {
     let mut s = F::one();

@@ -1,6 +1,8 @@
 use ark_ff::Field;
 use std::collections::HashMap;
 
+use ark_std::char::from_digit;
+#[derive(Debug)]    
 pub struct PlonkCircuit<F: Field> {
     pub n_vars: u32,
     pub pub_vars: HashMap<Var, String>,
@@ -8,7 +10,6 @@ pub struct PlonkCircuit<F: Field> {
     pub sums: Vec<(Var, Var, Var)>,
     pub values: Option<Vec<F>>,
 }
-
 type Var = u32;
 
 impl<F: Field> PlonkCircuit<F> {
@@ -52,10 +53,23 @@ impl<F: Field> PlonkCircuit<F> {
         self.n_vars += 1;
         self.n_vars - 1
     }
+    pub fn new_prod_with_output(&mut self, output: impl FnOnce() -> F, a: Var, b: Var) -> Var {
+        self.values.as_mut().map(|v| v.push(output()));
+        self.prods.push((a, b, self.n_vars));
+        self.n_vars += 1;
+        self.n_vars - 1
+    }
     pub fn new_pub_var(&mut self, value: impl FnOnce() -> F, name: String) -> Var {
         let v = self.new_var(value);
         self.publicize_var(v, name);
         v
+    }
+    pub fn get_value(&mut self, var: Var) -> F{
+	let mut rv = F::zero();
+	self.values.as_mut().map(|v| {
+	    rv = v[var as usize]
+	});
+	rv
     }
     pub fn n_gates(&self) -> usize {
         self.prods.len() + self.sums.len()
@@ -71,6 +85,7 @@ impl<F: Field> PlonkCircuit<F> {
     }
     pub fn new_squaring_circuit(steps: usize, start: Option<F>) -> Self {
         let mut self_ = PlonkCircuit::new(start.is_some());
+	println!("start {:?}", start.unwrap());
         let mut v = self_.new_var(|| start.unwrap());
         for _ in 0..steps {
             v = self_.new_prod(v, v);

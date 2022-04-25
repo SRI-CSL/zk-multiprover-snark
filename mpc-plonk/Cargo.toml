@@ -7,16 +7,29 @@ edition = "2018"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-ark-ff = { path = "../algebra/ff", version = "0.2.0", default-features = false }
-ark-ec = { path = "../algebra/ec", version = "0.2.0", default-features = false }
-ark-poly = { path = "../algebra/poly", version = "0.2.0", default-features = false }
-ark-relations = { path = "../snark/relations", version = "0.2.0", default-features = false }
-ark-serialize = { path = "../algebra/serialize", version = "0.2.0", default-features = false, features = [ "derive" ] }
-ark-std = { path = "../utils", default-features = false, features = [ "print-trace" ] }
-ark-groth16 = { path = "../groth16", version = "0.2.0", default-features = false, features = [ "std" ] }
-ark-bls12-377 = { path = "../curves/bls12_377", version = "0.2.0", default-features = false, features = ["curve"] }
-ark-bls12-381 = { path = "../curves/bls12_381", version = "0.2.0", default-features = false, features = ["curve"] }
-ark-poly-commit = { path = "../poly-commit", version = "0.2.0", default-features = false, features = [ "std" ] }
+#arkworks in SRI versions
+ark-ff = {git = "https://github.com/SRI-CSL/algebra", default-features=false, branch = "v3_sri"}
+ark-ec = {git = "https://github.com/SRI-CSL/algebra", default-features=false, branch = "v3_sri"}
+ark-poly = {git = "https://github.com/SRI-CSL/algebra", default-features=false, branch = "v3_sri"}
+ark-relations = { git = "https://github.com/SRI-CSL/snark", branch = "v3_sri", default-features = false }
+ark-serialize = { git = "https://github.com/SRI-CSL/algebra", default-features = false, branch = "v3_sri", features = [ "derive" ] }
+ark-std = { version="0.2.1-alpha.0" ,  git = "https://github.com/SRI-CSL/utils", default-features = false}
+ark-groth16 = { git = "https://github.com/SRI-CSL/groth16",  default-features = false, features = [ "std" ] }
+ark-ed-on-bls12-381 =  { git = "https://github.com/SRI-CSL/curves", default-features = false, features = [ "r1cs" ], branch = "v3_sri" }
+ark-bls12-377 = { git = "https://github.com/SRI-CSL/curves", default-features = true, features = [ "r1cs" ], branch = "v3_sri" }
+ark-poly-commit = { git = "https://github.com/SRI-CSL/poly-commit", branch = "v3_sri", default-features = false }
+
+mpc-net = { git = "https://github.com/SRI-CSL/mpc-net" }
+mpc-trait = { git = "https://github.com/SRI-CSL/mpc-trait"}
+mpc-algebra = { git = "https://github.com/SRI-CSL/mpc-algebra"}
+
+# SRI and SIEVE dependencies
+vlpa19       = { git = "https://github.com/SRI-CSL/zk-gen.git", branch = "for_plonk", default-features = false  }
+sieve_fields = { git = "https://github.com/SRI-CSL/zk-gen.git", branch = "for_plonk", default-features = false  }
+zki_sieve    = {path = "../zkinterface-sieve/rust"} # Need to add manually; not open-source
+
+# Misc
+num-bigint = "0.3.0"
 lazy_static = "1"
 derivative = { version = "2.0", features = ["use_core"]}
 log = {version = "0.4"}
@@ -24,13 +37,10 @@ digest = { version = "0.9" }
 
 rand = { version = "0.7", default-features = false }
 rand_chacha = { version = "0.2", default-features = false }
-rayon = { version = "1", optional = true }
+rayon = { version = "1.0.0", optional = false }
 zeroize = { version = "1", default-features = false, features = ["zeroize_derive"] }
 thiserror = "1"
 
-mpc-net = { path = "../mpc-net" }
-mpc-trait = { path = "../mpc-trait" }
-mpc-algebra = { path = "../mpc-algebra" }
 
 env_logger = "0.8"
 structopt = "0.3"

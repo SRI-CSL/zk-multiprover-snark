@@ -1,4 +1,5 @@
 //! Implementation of the PLONK proof system.
+
 //!
 //! PLONK is originally described [here](https://eprint.iacr.org/2019/953.pdf).
 //!
@@ -9,25 +10,35 @@
 
 pub mod data_structures;
 pub use data_structures::*;
+use std::convert::TryFrom;
+use std::{time::{Duration, Instant}};
+use ark_ff::BigInteger;
+use ark_ff::BigInteger256;
 pub mod relations;
+use ark_ff::FpParameters;
+use ark_ff::FftParameters;
 pub use relations::*;
 pub mod reveal;
 mod util;
-
+use zki_sieve::structs::{relation::Relation, instance::Instance, witness::Witness, gates::Gate};
 use log::debug;
-
+use num_bigint::BigUint;
 use blake2::Blake2s;
-
+use ark_ff::One;
+use ark_ff::PrimeField;
+use std::{path::{Path,PathBuf},char};
 use ark_ff::{FftField, Field};
-
+use ark_std::char::from_digit;
+use crate::structured::PlonkCircuit;
 use ark_poly_commit::{LabeledCommitment, LabeledPolynomial, PCRandomness, PolynomialCommitment};
-
+use zki_sieve::cli::*;
 use ark_poly::{
-    domain::EvaluationDomain,
+    domain::{ EvaluationDomain, MixedRadixEvaluationDomain, Radix2EvaluationDomain },
     univariate::{DenseOrSparsePolynomial, DensePolynomial},
     Polynomial, UVPolynomial,
 };
 
+use ark_bls12_377::Fr;
 use ark_std::{end_timer, rand::RngCore, start_timer};
 use std::borrow::Cow;
 use std::cell::RefCell;
@@ -35,10 +46,206 @@ use std::collections::HashMap;
 use std::iter::once;
 use std::marker::PhantomData;
 use thiserror::Error;
-
+use crate::flat::CircuitLayout;
 use mpc_trait::MpcWire;
 pub use util::FiatShamirRng;
+use sieve_fields::{Field as SieveField};
 
+fn bigint256_to_biguint(input:&BigInteger256) -> BigUint{
+    let bytes_le = input.to_bytes_le();
+    BigUint::from_bytes_le(&bytes_le)
+}
+
+fn biguint_to_bigint256(input:&BigUint) -> BigInteger256{
+    let result_bits_be:Vec<bool> = input.to_radix_be(2).iter().map(|b| if b == &0u8 { false } else { true }).collect();
+    BigInteger256::from_bits_be(&result_bits_be[..])
+}
+#[test]
+fn test_biguint_to_bigint(){
+    let test =  <SieveField as FftField>::FftParams::GENERATOR;
+    let test_biguint = bigint256_to_biguint(&test);
+    let test_bigint256 = biguint_to_bigint256(&test_biguint);
+    assert_eq!(test,test_bigint256);
+}
+#[test]
+fn test_radix_mixed(){
+    let n = 11;
+    let gates = Radix2EvaluationDomain::<Fr>::new(n).expect("gate domain");
+    let wires = MixedRadixEvaluationDomain::<Fr>::new(3 * n).expect("wire domain");
+
+    assert!(3 * gates.size() == wires.size());    
+}
+
+fn sieve_to_plonk<F:FftField + PrimeField>(instance_file:&str,witness_file:&str,relation_file:&str) -> (CircuitLayout::<F>,HashMap::<String,F>,usize) {
+    let options = Options{
+	tool: "flatten".to_string(),
+	paths: vec![PathBuf::from(instance_file),PathBuf::from(witness_file),PathBuf::from(relation_file)],
+	field_order: BigUint::from(101 as u32),
+incorrect:true,
+	gate_set: None,
+	modular_reduce: true,
+	out: PathBuf::from("output"),
+	tmp_wire_start:None,
+	resource: "-".to_string()
+    };
+    let source = stream_messages(&options).ok().unwrap();
+    let evaluate = main_evaluate(&source);
+
+    let result = main_ir_flattening_no_out(&options).ok().unwrap();
+    let (mut circuit, public) = ir_to_plonk::<F>(result.0,result.1,result.2);
+    circuit.pad_to_power_of_2();
+    let polys = CircuitLayout::from_circuit(&circuit);
+    polys.check(&public);
+    return (polys,public,circuit.n_gates());
+
+}
+//fill in dummy gates so number of gates is power of 2
+
+fn calc_root_of_unity(){
+     /*
+    //compute large_subgroup_root_of_unit to put in constant
+    
+
+    let gen_biguint =  bigint256_to_biguint(&<SieveField as FftField>::FftParams::GENERATOR);
+
+    let modulus_biguint = bigint256_to_biguint(&<SieveField as FftField>::FftParams::MODULUS);
+
+    let modulus_minus_one_bigint256 = biguint_to_bigint256(&(modulus_biguint - BigUint::from(1u64)));
+
+    let modulus_field = SieveField::from_repr(modulus_minus_one_bigint256).unwrap();
+    
+    let one = SieveField::from_repr(<SieveField as FftField>::FftParams::GENERATOR).unwrap().pow(modulus_minus_one_bigint256);
+    assert_eq!(one,SieveField::one());
+    
+//    let numerator = gen_biguint^(modulus_biguint - BigUint::from(1u64));
+*/    
+  /*  
+    let two_adicity = <SieveField as FftField>::FftParams::TWO_ADICITY;
+    let small_subgroup_base = <SieveField as FftField>::FftParams::SMALL_SUBGROUP_BASE.unwrap();
+    let small_subgroup_base_adicity = <SieveField as FftField>::FftParams::SMALL_SUBGROUP_BASE_ADICITY.unwrap();
+    let denom = BigUint::from(2u32.pow(two_adicity) * (small_subgroup_base));
+    let result = gen_biguint^(modulus_biguint - BigUint::from(1u64)) / denom;
+    let result_bits_be:Vec<bool> = result.to_radix_be(2).iter().map(|b| if b == &0u8 { false } else { true }).collect();
+    let result_bigint = BigInteger256::from_bits_be(&result_bits_be[..]);
+    println!("result {:?}", result_bigint);
+     */
+}
+pub fn ir_to_plonk<F:PrimeField>(instance: Instance, witness: Witness, relation: Relation)->(PlonkCircuit<F>,HashMap::<String,F>){
+    let mut instance_queue = instance.common_inputs;
+    let mut witness_queue = witness.short_witness;
+    let mut circuit = PlonkCircuit::new(true);
+    let mut map = HashMap::new();
+    let mut public_vars = HashMap::<String,F>::new();
+    for gate in relation.gates{
+	match gate {
+	    Gate::Constant(wireId,v_as_bytes) => {
+		let value = F::from_le_bytes_mod_order(&v_as_bytes[..]);
+		let new_var = circuit.new_var(|| value);
+		map.insert(wireId,new_var); //this should be insert or update
+	    },
+	    Gate::AssertZero(wireId) => {
+		let temp_var = circuit.new_var(|| F::one());
+		let new_var = circuit.new_prod_with_output(|| F::zero(), *map.get(&wireId).unwrap(), temp_var);
+		//bind to pubilc var with value 0
+		let mut var_str = String::from("zero_output");
+		var_str.push(char::from_u32(wireId as u32).unwrap());
+		circuit.publicize_var(new_var,var_str.clone());
+		public_vars.insert(var_str.clone(), F::zero());
+	    },
+	    Gate::Copy(output,input) => {
+		let value = circuit.get_value(*map.get(&input).unwrap());
+		let new_var = circuit.new_var(|| value);
+		map.insert(output, new_var);
+	    },
+	    Gate::Add(output,input1,input2) => {
+		let sum_var = circuit.new_sum(*map.get(&input1).unwrap(),*map.get(&input2).unwrap());
+		map.insert(output,sum_var);
+	    },
+	    Gate::Mul(output,input1,input2) => {
+		let prod_var = circuit.new_prod(*map.get(&input1).unwrap(), *map.get(&input2).unwrap());
+		map.insert(output,prod_var);
+	    },
+	    Gate::AddConstant(output,input,v_as_bytes) => {
+		let value = F::from_le_bytes_mod_order(&v_as_bytes[..]);
+		let new_var = circuit.new_var(|| value);
+		let sum_var = circuit.new_sum(*map.get(&input).unwrap(),new_var);
+		map.insert(output,sum_var);
+	    },
+	    Gate::MulConstant(output,input,v_as_bytes) => {
+		let value = F::from_le_bytes_mod_order(&v_as_bytes[..]);		
+		let new_var = circuit.new_var(|| value);
+		let prod_var = circuit.new_prod(*map.get(&input).unwrap(),new_var);
+		map.insert(output,prod_var);		
+	    },
+	    Gate::And(output, input1, input2) => {
+		//mul
+		let prod_var = circuit.new_prod(*map.get(&input1).unwrap(), *map.get(&input2).unwrap());
+		map.insert(output,prod_var);
+
+	    },
+	    Gate::Xor(output,input1, input2) => {
+		//mul constant where value = -1, var = input2
+		let new_var = circuit.new_var(|| -F::one());
+		let prod_var = circuit.new_prod(*map.get(&input2).unwrap(),new_var);
+		map.insert(output,prod_var);
+		//add prod_var and input1
+		let sum_var = circuit.new_sum(*map.get(&input1).unwrap(),*map.get(&input2).unwrap());
+		//multiply sum_var by itself
+		let prod_var = circuit.new_prod(*map.get(&input1).unwrap(), *map.get(&input2).unwrap());
+		map.insert(output,prod_var);
+	    },
+	    Gate::Not(output,input) => {
+		//mul constant where value = -1, var = input
+		let new_var = circuit.new_var(|| -F::one());
+		let sum_var = circuit.new_prod(*map.get(&input).unwrap(),new_var);
+		// AddConstant 1 + sum_var
+		let new_var = circuit.new_var(|| F::one());
+		let sum_var = circuit.new_sum(sum_var,new_var);
+		map.insert(output,sum_var);
+	    },
+	    Gate::Instance(wireId) => {
+		//pop value off instance queue and then Constant
+		let v_as_bytes = instance_queue.remove(0);
+		let value = F::from_le_bytes_mod_order(&v_as_bytes[..]);				
+		let new_var = circuit.new_var(|| value);
+		map.insert(wireId,new_var); //this should be insert or update
+		let mut var_str = String::from("instance");
+		var_str.push(char::from_u32(new_var as u32).unwrap());
+		public_vars.insert(var_str.clone(), value);
+		circuit.publicize_var(new_var, var_str.clone());
+	    },
+	    Gate::Witness(wireId) => {
+		//pop value off witness queue and then Constant
+		let v_as_bytes = witness_queue.remove(0);
+		let value = F::from_le_bytes_mod_order(&v_as_bytes[..]);				
+		let new_var = circuit.new_var(|| value);
+		map.insert(wireId,new_var); //this should be insert or update
+	    },
+	    Gate::Free(wireId, option) => {
+		//what do we have in memory
+		//a vector of values -> a vector of labels
+		//a map that maps wireId to value
+		//if something is freed, then its wireId might be used again
+		//
+
+		//to do
+	    },
+	    Gate::AnonCall(_,_,_,_,_) =>{
+		println!("this shouldn't exist in flattened version");
+	    },
+	    Gate::Call(_,_,_) => {
+		println!("this shouldn't exist in flattened version");
+	    },
+	    Gate::Switch(_,_,_,_) => {
+		println!("this shouldn't exist in flattened version");
+	    },
+	    Gate::For(_,_,_,_,_) => {
+		println!("this shouldn't exist in flattened version");
+	    }
+	}
+    }
+    (circuit,public_vars)
+}
 pub fn setup<'r, F: FftField, PC: PolynomialCommitment<F, DensePolynomial<F>>>(
     srs: &PC::UniversalParams,
     circ: &relations::flat::CircuitLayout<F>,
@@ -637,24 +844,22 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-
+    use vlpa19::vlpa19_marlin::Vlpa19_Marlin;
     type E = ark_bls12_377::Bls12_377;
     type F = ark_bls12_377::Fr;
     type P = DensePolynomial<F>;
-    type PC = ark_poly_commit::marlin::marlin_pc::MarlinKZG10<E, P>;
+    type PC = Vlpa19_Marlin<F>;
     type Pl = Plonk<F, PC>;
 
     #[test]
     fn plonk_test() {
         use relations::{flat::*, structured::*};
         use std::collections::HashMap;
-        let steps = 4;
-        let start = F::from(2u64);
-        let c = PlonkCircuit::<F>::new_squaring_circuit(steps, Some(start));
-        let res = (0..steps).fold(start, |a, _| a * a);
-        let public: HashMap<String, F> = vec![("out".to_owned(), res)].into_iter().collect();
-        let circ = CircuitLayout::from_circuit(&c);
 
+	let correct_witness   = "../rand_100/arand_witness.sieve";
+	let incorrect_witness = "./sum_check1/asum_check1_witness.sieve";
+	let (circ,public,n_gates) = sieve_to_plonk::<Fr>("../rand_100/rand_instance.sieve",correct_witness,"../rand_100/rand_relation_flat.sieve");
+	println!("num gates {:?}", n_gates);
         let setup_rng = &mut ark_std::test_rng();
         let zk_rng = &mut ark_std::test_rng();
 
@@ -664,9 +869,11 @@ mod tests {
             t
         };
 
-        let srs = Pl::universal_setup(steps, setup_rng);
+        let srs = Pl::universal_setup( n_gates , setup_rng);
         let (pk, vk) = Pl::circuit_setup(&srs, &v_circ);
+	let now = Instant::now();
         let pf = Pl::prove(&pk, &circ, zk_rng);
+	println!("proof time {:?}", now.elapsed().as_millis());
         Pl::verify(&vk, &v_circ, pf, &public);
     }
 }
